@@ -6,24 +6,17 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: one working column — a drop pad shaped like Note's pad grid, then a result row per preset. */
+/* Layout: one working column — a drop pad shaped like Note's pad grid, then a result row per preset.
+   Dark only, on purpose: it reads like the Live and Note screens it sits next to. */
 :root {
-  --bg: #f3f4f1; --surface: #ffffff; --ink: #17191c; --muted: #5d636b; --line: #dcdfdb;
-  --pad: #e6e8e3; --accent: #ff5a1f; --accent-ink: #ffffff;
-  --ok: #1f8a4c; --warn: #a66a00; --bad: #c62f2f;
+  --bg: #121315; --surface: #1b1d20; --ink: #eceeea; --muted: #9aa0a6; --line: #2c2f33;
+  --pad: #24272b; --accent: #ff6a33; --accent-ink: #120a06;
+  --ok: #4cc27c; --warn: #e0a43a; --bad: #ff6b6b;
   --display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
   --body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
-  color-scheme: light;
+  color-scheme: dark;
 }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #121315; --surface: #1b1d20; --ink: #eceeea; --muted: #9aa0a6; --line: #2c2f33;
-  --pad: #24272b; --accent: #ff6a33; --accent-ink: #120a06;
-  --ok: #4cc27c; --warn: #e0a43a; --bad: #ff6b6b; color-scheme: dark } }
-:root[data-theme="dark"] {
-  --bg: #121315; --surface: #1b1d20; --ink: #eceeea; --muted: #9aa0a6; --line: #2c2f33;
-  --pad: #24272b; --accent: #ff6a33; --accent-ink: #120a06;
-  --ok: #4cc27c; --warn: #e0a43a; --bad: #ff6b6b; color-scheme: dark }
 
 * { box-sizing: border-box }
 html, body { margin: 0 }
