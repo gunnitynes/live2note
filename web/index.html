@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"></head><body>
+<title>Live to Note</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one working column — a drop pad shaped like Note's pad grid, then a result row per preset. */
+:root {
+  --bg: #f3f4f1; --surface: #ffffff; --ink: #17191c; --muted: #5d636b; --line: #dcdfdb;
+  --pad: #e6e8e3; --accent: #ff5a1f; --accent-ink: #ffffff;
+  --ok: #1f8a4c; --warn: #a66a00; --bad: #c62f2f;
+  --display: "Bricolage Grotesque", "Helvetica Neue", Arial, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121315; --surface: #1b1d20; --ink: #eceeea; --muted: #9aa0a6; --line: #2c2f33;
+  --pad: #24272b; --accent: #ff6a33; --accent-ink: #120a06;
+  --ok: #4cc27c; --warn: #e0a43a; --bad: #ff6b6b; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121315; --surface: #1b1d20; --ink: #eceeea; --muted: #9aa0a6; --line: #2c2f33;
+  --pad: #24272b; --accent: #ff6a33; --accent-ink: #120a06;
+  --ok: #4cc27c; --warn: #e0a43a; --bad: #ff6b6b; color-scheme: dark }
+
+* { box-sizing: border-box }
+html, body { margin: 0 }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+main { max-width: 860px; margin: 0 auto; padding-block: 40px 64px; display: grid; gap: 36px }
+h1, h2 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: -0.01em }
+h1 { font-size: clamp(34px, 6vw, 52px); line-height: 1.02; font-weight: 700 }
+h1 span { color: var(--accent) }
+h2 { font-size: 20px; font-weight: 700 }
+p { margin: 0; max-width: 65ch }
+.lede { color: var(--muted); font-size: 17px; margin-top: 12px }
+code, .mono { font-family: var(--mono); font-size: 0.92em }
+
+/* the drop pad: a 4x4 grid like Note's drum pads, the whole thing is the target */
+.drop { position: relative; border-radius: 14px; background: var(--surface); border: 1.5px dashed var(--line);
+  padding: 22px; display: grid; grid-template-columns: 148px 1fr; gap: 24px; align-items: center; cursor: pointer;
+  transition: border-color .15s, transform .15s }
+.drop:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px }
+.drop.over { border-color: var(--accent); transform: scale(1.005) }
+.pads { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; aspect-ratio: 1; max-width: 100% }
+.pads i { border-radius: 4px; background: var(--pad); transition: background .25s }
+.pads i.lit { background: var(--accent) }
+.drop .what { display: grid; gap: 10px; min-width: 0 }
+.drop strong { font-family: var(--display); font-size: 22px; line-height: 1.15 }
+.drop .hint { color: var(--muted) }
+.btns { display: flex; flex-wrap: wrap; gap: 8px }
+button, .btn { font: 500 14px var(--body); border-radius: 8px; padding: 8px 14px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink) }
+button:hover { border-color: var(--muted) }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink) }
+button:disabled { opacity: .45; cursor: default }
+
+/* results */
+.results { display: grid; gap: 10px }
+.results-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap }
+.count { color: var(--muted); font-variant-numeric: tabular-nums }
+.row { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+  display: grid; grid-template-columns: auto 1fr auto; gap: 4px 14px; align-items: start }
+.chip { font: 600 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; padding: 3px 7px; border-radius: 5px;
+  margin-top: 2px; white-space: nowrap }
+.chip.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent) }
+.chip.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent) }
+.row .name { font-weight: 600; min-width: 0; overflow-wrap: anywhere }
+.row .meta { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums }
+.row ul { grid-column: 2 / 4; margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 14px }
+.row li { padding-left: 18px; position: relative; overflow-wrap: anywhere }
+.row li::before { position: absolute; left: 0; font-family: var(--mono) }
+.row li.e { color: var(--bad) } .row li.e::before { content: "✕" }
+.row li.w { color: var(--warn) } .row li.w::before { content: "!" ; left: 4px }
+.row li.n { color: var(--muted) } .row li.n::before { content: "·"; left: 4px }
+.row .act { display: flex; gap: 8px }
+.example { font: 600 11px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted) }
+details summary { cursor: pointer; color: var(--muted); font-size: 13px }
+
+/* rules */
+.rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px }
+.rule { border-top: 2px solid var(--ink); padding-top: 10px; display: grid; gap: 6px }
+.rule h3 { margin: 0; font: 600 12px var(--mono); letter-spacing: .08em; text-transform: uppercase }
+.rule p { color: var(--muted); font-size: 14px }
+.tree { font: 13px/1.6 var(--mono); background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 14px 16px; overflow-x: auto; white-space: pre; margin: 0 }
+.steps { margin: 0; padding-left: 22px; display: grid; gap: 8px; max-width: 65ch }
+.steps li::marker { font-family: var(--mono); color: var(--accent) }
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px }
+
+@media (max-width: 560px) {
+  .drop { grid-template-columns: 1fr; } .pads { width: 120px }
+  .row { grid-template-columns: auto 1fr } .row .act { grid-column: 1 / 3 } .row ul { grid-column: 1 / 3 }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important } }
+</style>
+
+<main>
+  <header>
+    <h1>Live <span>→</span> Note</h1>
+    <p class="lede">Drop a rack or a Live Set here and get presets your phone can open. Drift synths and Drum Racks
+      come over with every setting, macro mappings included. Anything Note can't play gets a plain
+      explanation of what to change.</p>
+  </header>
+
+  <section aria-label="Convert">
+    <div class="drop" id="drop" tabindex="0" role="button" aria-describedby="drophint">
+      <div class="pads" id="pads" aria-hidden="true"></div>
+      <div class="what">
+        <strong>Drop a rack (.adg) or a Live project folder</strong>
+        <p class="hint" id="drophint">Using drum samples? In Live choose <b>File → Collect All and Save</b>, then drop
+          the whole <b>project folder</b> (the one with the Samples folder inside), not just the .als file.</p>
+        <div class="btns">
+          <button type="button" class="primary" id="pickFiles">Choose files</button>
+          <button type="button" id="pickFolder">Choose a folder</button>
+        </div>
+      </div>
+    </div>
+    <input type="file" id="files" multiple accept=".adg,.adv,.als,.wav,.aif,.aiff,.flac,.mp3" hidden>
+    <input type="file" id="folder" webkitdirectory multiple hidden>
+  </section>
+
+  <section class="results" aria-live="polite">
+    <div class="results-head">
+      <h2 id="resultsTitle">Example results</h2>
+      <div class="btns">
+        <span class="count" id="count"></span>
+        <button type="button" id="clearAll" hidden>Start over</button>
+        <button type="button" id="saveAll" disabled>Download all ready presets</button>
+      </div>
+    </div>
+    <div id="list"></div>
+  </section>
+
+  <section aria-labelledby="hTo">
+    <h2 id="hTo">Getting it onto your phone</h2>
+    <ol class="steps" style="margin-top:12px">
+      <li>Download the <code>.ablpresetbundle</code> file.</li>
+      <li>On a Mac: right-click it, choose <b>Share → AirDrop</b>, pick your phone, then choose <b>Ableton Note</b>.
+        On Windows: put it in iCloud Drive, Dropbox or Google Drive.</li>
+      <li>From a cloud folder: open the <b>Files</b> app, tap the file, then <b>Share → Ableton Note</b>.</li>
+      <li>In Note it appears under <b>User Library → Presets</b>.</li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="hRules" style="display:grid;gap:16px">
+    <h2 id="hRules">What Note can play</h2>
+    <div class="rules">
+      <div class="rule"><h3>Synth</h3><p>One <b>Drift</b>. Note plays up to 8 voices, so anything above that is set to 8.
+        Wavetable, Operator, Meld, plug-ins and Max for Live don't run on the phone.</p></div>
+      <div class="rule"><h3>Drums</h3><p>A <b>Drum Rack</b> of up to 16 pads, each using <b>Drum Sampler</b>
+        (right-click the rack → <i>Replace Simplers with Drum Sampler</i>). One return chain allowed.</p></div>
+      <div class="rule"><h3>Effects</h3><p>Two slots after the instrument: Reverb, Delay, Saturator, Chorus-Ensemble,
+        Phaser-Flanger, Redux or Channel EQ.</p></div>
+      <div class="rule"><h3>Anything else</h3><p>Resample it: record one long held C3 into audio, export it as a WAV,
+        AirDrop it to Note and load it into a <b>Melodic Sampler</b> track.</p></div>
+    </div>
+    <pre class="tree">Instrument Rack            ← what you drop here (bare devices get wrapped for you)
+ └─ chain
+     ├─ Drift  or  Drum Rack (Drum Sampler pads)
+     ├─ effect 1
+     └─ effect 2</pre>
+    <p class="hint" style="color:var(--muted)">You don't need the hidden <code>Options.txt</code> setting or the
+      right-click export. This page reads the rack file directly and writes the same file Live's own export writes.</p>
+  </section>
+
+  <footer>Runs entirely in your browser; nothing is uploaded. Labels for some rarely-used Drift settings (LFO shapes beyond
+    Sine, unison voice modes) come from Live's menu order and are marked in the details.</footer>
+</main>
+
+<script>Live2NoteTables={"kinds":{"InstrumentGroupDevice":"instrumentRack","DrumGroupDevice":"drumRack","Drift":"drift","DrumCell":"drumCell","Reverb":"reverb","Delay":"delay","Saturator":"saturator","ChannelEq":"channelEq","Chorus2":"chorus","PhaserNew":"phaser","Redux2":"redux2"},"instruments":["drift","drumCell","drumRack"],"effects":["channelEq","chorus","delay","phaser","redux2","reverb","saturator"],"hints":{"OriginalSimpler":"Simpler: on drum pads use 'Replace Simplers with Drum Sampler'; for a melodic sample, resample it (see 'Anything else' in the guide)","MultiSampler":"Sampler isn't in Note: resample it to one note and load it in Melodic Sampler","InstrumentVector":"Wavetable isn't in Live's export list yet: resample it, or rebuild it in Drift","Operator":"Operator isn't in Note: resample it, or rebuild it in Drift","InstrumentMeld":"Meld isn't in Note: resample it","PluginDevice":"Plug-ins can't run on a phone: resample it","AuPluginDevice":"Plug-ins can't run on a phone: resample it","MxDeviceInstrument":"Max for Live can't run in Note: resample it","MxDeviceAudioEffect":"Max for Live can't run in Note: remove it","Eq8":"EQ Eight isn't in Note: use Channel EQ","AutoFilter2":"Auto Filter isn't in Live's export list: remove it","Hybrid":"Hybrid Reverb isn't in Note: use Reverb","Echo":"Echo isn't in Note: use Delay","GlueCompressor":"Glue Compressor isn't in Note: remove it","Compressor2":"Compressor isn't in Live's export list: remove it"},"enums":{"drift":{"Oscillator1_Type":["Sine","Triangle","Shark Tooth","Saturated","Saw","Pulse","Rectangle"],"Oscillator2_Type":["Sine","Triangle","Saturated","Saw","Rectangle"],"Oscillator1_ShapeModSource":["Env 1","Env 2 / Cyc","LFO","Key","Velocity","Modwheel","Pressure","Slide"],"Filter_ModSource1":["Env 1","Env 2 / Cyc","LFO","Key","Velocity","Modwheel","Pressure","Slide"],"Filter_ModSource2":["Env 1","Env 2 / Cyc","LFO","Key","Velocity","Modwheel","Pressure","Slide"],"Lfo_ModSource":["Env 1","Env 2 / Cyc","LFO","Key","Velocity","Modwheel","Pressure","Slide"],"PitchModulation_Source1":["Env 1","Env 2 / Cyc","LFO","Key","Velocity","Modwheel","Pressure","Slide"],"PitchModulation_Source2":["Env 1","Env 2 / Cyc","LFO","Key","Velocity","Modwheel","Pressure","Slide"],"ModulationMatrix_Source1":["Env 1","Env 2 / Cyc","LFO","Key","Velocity","Modwheel","Pressure","Slide"],"ModulationMatrix_Source2":["Env 1","Env 2 / Cyc","LFO","Key","Velocity","Modwheel","Pressure","Slide"],"ModulationMatrix_Source3":["Env 1","Env 2 / Cyc","LFO","Key","Velocity","Modwheel","Pressure","Slide"],"ModulationMatrix_Target1":["None","Osc 1 Gain","Osc 1 Shape","Osc 2 Gain","Osc 2 Detune","Noise Gain","LP Frequency","LP Resonance","HP Frequency","LFO Rate","Cyc Env Rate","Main Volume"],"ModulationMatrix_Target2":["None","Osc 1 Gain","Osc 1 Shape","Osc 2 Gain","Osc 2 Detune","Noise Gain","LP Frequency","LP Resonance","HP Frequency","LFO Rate","Cyc Env Rate","Main Volume"],"ModulationMatrix_Target3":["None","Osc 1 Gain","Osc 1 Shape","Osc 2 Gain","Osc 2 Detune","Noise Gain","LP Frequency","LP Resonance","HP Frequency","LFO Rate","Cyc Env Rate","Main Volume"],"Filter_Type":["I","II"],"Lfo_Mode":["Freq","Ratio","Time","Sync"],"CyclingEnvelope_Mode":["Freq","Ratio","Time","Sync"],"Lfo_Shape":["Sine","Triangle","Saw Up","Saw Down","Square","Sample & Hold","Wander","Linear Env","Exponential Env"],"Global_Envelope2Mode":["Env","Cyc"],"Global_VoiceMode":["Poly","Mono","Stereo","Unison"],"Global_VoiceCount":["4","8","12","16","20","24","28","32"]},"drumCell":{"Effect_Type":["Stretch","Loop","Pitch Env","Punch","8-Bit","FM","Ring Mod","Sub Osc","Noise"],"Voice_Envelope_Mode":["A-H-D","A-S-R"],"Voice_Filter_Type":["Highpass","Lowpass","Bandpass","Peak"],"Voice_ModulationSource":["Velocity","Envelope"],"Voice_ModulationTarget":["Filter","Pitch","Volume"]},"delay":{"DelayLine_CompatibilityMode":["D"],"DelayLine_SmoothingMode":["Repitch","Fade","Jump"],"DelayLine_SyncedSixteenthL":["1","2","3","4","5","6","8","16"],"DelayLine_SyncedSixteenthR":["1","2","3","4","5","6","8","16"],"DryWetMode":["Linear","Equal-loudness"]},"reverb":{"HighFilterType":["Shelf","Low-pass"],"RoomType":["SuperEco","Eco","Mid","High"],"SizeSmoothing":["None","Slow","Fast"]},"saturator":{"Type":["Analog Clip","Soft Sine","Bass Shaper","Medium Curve","Hard Curve","Sinoid Fold","Digital Clip","Waveshaper"],"PostClip":["off","on"]}},"verified":{"drift.Oscillator1_Type":[1,2,4],"drift.Oscillator2_Type":[2],"drift.Filter_Type":[0,1],"drift.Global_VoiceCount":[0,1],"drift.Global_VoiceMode":[0],"drift.Global_Envelope2Mode":[0],"drift.Lfo_Mode":[0],"drift.CyclingEnvelope_Mode":[0],"drift.Lfo_Shape":[0],"drift.ModulationMatrix_Target1":[0,8],"drift.Filter_ModSource1":[1,2,3,4,5,6,7],"drift.Filter_ModSource2":[1,2,3,4,5,6,7],"drift.Lfo_ModSource":[1,2,3,4,5,6,7],"drift.Oscillator1_ShapeModSource":[1,2,3,4,5,6,7],"drift.PitchModulation_Source1":[1,2,3,4,5,6,7],"drift.PitchModulation_Source2":[1,2,3,4,5,6,7],"drift.ModulationMatrix_Source1":[1,2,3,4,5,6,7],"drift.ModulationMatrix_Source2":[1,2,3,4,5,6,7],"drift.ModulationMatrix_Source3":[1,2,3,4,5,6,7],"delay.DelayLine_SmoothingMode":[0,1],"delay.DelayLine_SyncedSixteenthL":[5],"delay.DelayLine_SyncedSixteenthR":[3],"delay.DryWetMode":[1],"delay.DelayLine_CompatibilityMode":[0],"drumCell.Effect_Type":[0],"drumCell.Voice_Envelope_Mode":[0],"drumCell.Voice_Filter_Type":[1],"drumCell.Voice_ModulationSource":[0],"drumCell.Voice_ModulationTarget":[0]},"schema":{"instrumentRack":{"Enabled":"bool","Macro0":"float","Macro1":"float","Macro2":"float","Macro3":"float","Macro4":"float","Macro5":"float","Macro6":"float","Macro7":"float"},"drift":{"CyclingEnvelope_Hold":"float","CyclingEnvelope_MidPoint":"float","CyclingEnvelope_Mode":"str","CyclingEnvelope_Rate":"float","CyclingEnvelope_Ratio":"float","CyclingEnvelope_SyncedRate":"int","CyclingEnvelope_Time":"float","Enabled":"bool","Envelope1_Attack":"float","Envelope1_Decay":"float","Envelope1_Release":"float","Envelope1_Sustain":"float","Envelope2_Attack":"float","Envelope2_Decay":"float","Envelope2_Release":"float","Envelope2_Sustain":"float","Filter_Frequency":"float","Filter_HiPassFrequency":"float","Filter_ModAmount1":"float","Filter_ModAmount2":"float","Filter_ModSource1":"str","Filter_ModSource2":"str","Filter_NoiseThrough":"bool","Filter_OscillatorThrough1":"bool","Filter_OscillatorThrough2":"bool","Filter_Resonance":"float","Filter_Tracking":"float","Filter_Type":"str","Global_DriftDepth":"float","Global_Envelope2Mode":"str","Global_Glide":"float","Global_HiQuality":"bool","Global_Legato":"bool","Global_MonoVoiceDepth":"float","Global_NotePitchBend":"bool","Global_PitchBendRange":"int","Global_PolyVoiceDepth":"float","Global_ResetOscillatorPhase":"bool","Global_SerialNumber":"int","Global_StereoVoiceDepth":"float","Global_Transpose":"int","Global_UnisonVoiceDepth":"float","Global_VoiceCount":"str","Global_VoiceMode":"str","Global_VolVelMod":"float","Global_Volume":"float","Lfo_Amount":"float","Lfo_ModAmount":"float","Lfo_ModSource":"str","Lfo_Mode":"str","Lfo_Rate":"float","Lfo_Ratio":"float","Lfo_Retrigger":"bool","Lfo_Shape":"str","Lfo_SyncedRate":"int","Lfo_Time":"float","Mixer_NoiseLevel":"float","Mixer_NoiseOn":"bool","Mixer_OscillatorGain1":"float","Mixer_OscillatorGain2":"float","Mixer_OscillatorOn1":"bool","Mixer_OscillatorOn2":"bool","ModulationMatrix_Amount1":"float","ModulationMatrix_Amount2":"float","ModulationMatrix_Amount3":"float","ModulationMatrix_Source1":"str","ModulationMatrix_Source2":"str","ModulationMatrix_Source3":"str","ModulationMatrix_Target1":"str","ModulationMatrix_Target2":"str","ModulationMatrix_Target3":"str","Oscillator1_Shape":"float","Oscillator1_ShapeMod":"float","Oscillator1_ShapeModSource":"str","Oscillator1_Transpose":"int","Oscillator1_Type":"str","Oscillator2_Detune":"float","Oscillator2_Transpose":"int","Oscillator2_Type":"str","PitchModulation_Amount1":"float","PitchModulation_Amount2":"float","PitchModulation_Source1":"str","PitchModulation_Source2":"str"},"reverb":{"AllPassGain":"float","AllPassSize":"float","BandFreq":"float","BandHighOn":"bool","BandLowOn":"bool","BandWidth":"float","ChorusOn":"bool","CutOn":"bool","DecayTime":"float","DiffuseDelay":"float","EarlyReflectModDepth":"float","EarlyReflectModFreq":"float","Enabled":"bool","FlatOn":"bool","FreezeOn":"bool","HighFilterType":"str","MixDiffuse":"float","MixDirect":"float","MixReflect":"float","PreDelay":"float","RoomSize":"float","RoomType":"str","ShelfHiFreq":"float","ShelfHiGain":"float","ShelfHighOn":"bool","ShelfLoFreq":"float","ShelfLoGain":"float","ShelfLowOn":"bool","SizeModDepth":"float","SizeModFreq":"float","SizeSmoothing":"str","SpinOn":"bool","StereoSeparation":"float"},"delay":{"DelayLine_CompatibilityMode":"str","DelayLine_Link":"bool","DelayLine_OffsetL":"float","DelayLine_OffsetR":"float","DelayLine_PingPong":"bool","DelayLine_PingPongDelayTimeL":"float","DelayLine_PingPongDelayTimeR":"float","DelayLine_SimpleDelayTimeL":"float","DelayLine_SimpleDelayTimeR":"float","DelayLine_SmoothingMode":"str","DelayLine_SyncL":"bool","DelayLine_SyncR":"bool","DelayLine_SyncedSixteenthL":"str","DelayLine_SyncedSixteenthR":"str","DelayLine_TimeL":"float","DelayLine_TimeR":"float","DryWet":"float","DryWetMode":"str","EcoProcessing":"bool","Enabled":"bool","Feedback":"float","Filter_Bandwidth":"float","Filter_Frequency":"float","Filter_On":"bool","Freeze":"bool","Modulation_AmountFilter":"float","Modulation_AmountTime":"float","Modulation_Frequency":"float"},"saturator":{"BaseDrive":"float","BassShaperThreshold":"float","ColorDepth":"float","ColorFrequency":"float","ColorOn":"bool","ColorWidth":"float","DryWet":"float","Enabled":"bool","Oversampling":"bool","PostClip":"str","PostDrive":"float","PreDcFilter":"bool","PreDrive":"float","Type":"str","WsCurve":"float","WsDamp":"float","WsDepth":"float","WsDrive":"float","WsLin":"float","WsPeriod":"float"},"drumRack":{"Enabled":"bool","Macro0":"float","Macro1":"float","Macro2":"float","Macro3":"float","Macro4":"float","Macro5":"float","Macro6":"float","Macro7":"float"},"drumCell":{"Effect_EightBitFilterDecay":"float","Effect_EightBitResamplingRate":"float","Effect_FmAmount":"float","Effect_FmFrequency":"float","Effect_LoopLength":"float","Effect_LoopOffset":"float","Effect_NoiseAmount":"float","Effect_NoiseFrequency":"float","Effect_On":"bool","Effect_PitchEnvelopeAmount":"float","Effect_PitchEnvelopeDecay":"float","Effect_PunchAmount":"float","Effect_PunchTime":"float","Effect_RingModAmount":"float","Effect_RingModFrequency":"float","Effect_StretchFactor":"float","Effect_StretchGrainSize":"float","Effect_SubOscAmount":"float","Effect_SubOscFrequency":"float","Effect_Type":"str","Enabled":"bool","NotePitchBend":"bool","Pan":"float","Voice_Detune":"float","Voice_Envelope_Attack":"float","Voice_Envelope_Decay":"float","Voice_Envelope_Hold":"float","Voice_Envelope_Mode":"str","Voice_Filter_Frequency":"float","Voice_Filter_On":"bool","Voice_Filter_PeakGain":"float","Voice_Filter_Resonance":"float","Voice_Filter_Type":"str","Voice_Gain":"float","Voice_ModulationAmount":"float","Voice_ModulationSource":"str","Voice_ModulationTarget":"str","Voice_PitchToEnvelopeModulation":"bool","Voice_PlaybackLength":"float","Voice_PlaybackStart":"float","Voice_Transpose":"int","Voice_VelocityToVolume":"float","Volume":"float"}}}</script>
+<script>// live2note core — the same converter as live2note.py, for the browser (and Node, for tests).
+// Input: the XML text of an .adg / .adv / .als. Output: presets + a report per preset.
+// Samples are resolved through a callback, because only the caller knows what files it has.
+(function (root) {
+  "use strict";
+  let T = null; // tables: kinds, enums, schema, verified, hints (from devices.py)
+
+  // ------------------------------------------------------------ tiny XML parser
+  // Live's XML is attributes-only elements; text nodes carry nothing we need.
+  function parseXML(s) {
+    const re = /<(\/?)([A-Za-z_][\w.\-]*)((?:\s+[\w.\-:]+="[^"]*")*)\s*(\/?)>|<\?[^>]*\?>|<!--[\s\S]*?-->/g;
+    const attrRe = /([\w.\-:]+)="([^"]*)"/g;
+    const top = { tag: "#doc", a: {}, c: [] };
+    const stack = [top];
+    let m;
+    while ((m = re.exec(s))) {
+      if (!m[2]) continue; // declaration/comment
+      if (m[1]) { stack.pop(); continue; }
+      const el = { tag: m[2], a: {}, c: [] };
+      let am; attrRe.lastIndex = 0;
+      while ((am = attrRe.exec(m[3]))) el.a[am[1]] = unesc(am[2]);
+      stack[stack.length - 1].c.push(el);
+      if (!m[4]) stack.push(el);
+    }
+    return top.c[0];
+  }
+  function unesc(v) {
+    return v.indexOf("&") < 0 ? v : v.replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+  }
+  const find = (e, path) => {
+    if (!e) return null;
+    for (const p of path.split("/")) {
+      e = e.c.find((x) => x.tag === p);
+      if (!e) return null;
+    }
+    return e;
+  };
+  const kids = (e) => (e ? e.c : []);
+  function* iter(e, tag) {
+    if (e.tag === tag) yield e;
+    for (const c of e.c) yield* iter(c, tag);
+  }
+  function val(e, name, dflt) {
+    const c = find(e, name);
+    if (!c) return dflt;
+    const m = find(c, "Manual");
+    const v = (m || c).a.Value;
+    return v === undefined ? dflt : v;
+  }
+  // Live writes float fields as 127.0, never 127. Float-typed values are boxed in F so the
+  // serializer can do the same; nothing else in the converter needs to know.
+  class F { constructor(v) { this.v = v; } valueOf() { return this.v; } }
+  const f = (v) => new F(+v);
+  const toDb = (lin) => (+lin <= 0 ? -Infinity : 20 * Math.log10(+lin));
+
+  // ------------------------------------------------------------ report
+  class Report {
+    constructor(name) { this.name = name; this.errors = []; this.warnings = []; this.notes = []; }
+    error(m) { this.errors.push(m); } warn(m) { this.warnings.push(m); } note(m) { this.notes.push(m); }
+  }
+
+  // ------------------------------------------------------------ two layouts -> one shape
+  const RACKS = new Set(["InstrumentGroupDevice", "DrumGroupDevice", "AudioEffectGroupDevice"]);
+  function devicesInChain(b) {
+    const dc = find(b, "DeviceChain");
+    let devs = null;
+    if (dc) for (const d of iter(dc, "Devices")) { devs = d; break; }
+    return kids(devs).map(wrapLive);
+  }
+  function wrapLive(d) {
+    if (!RACKS.has(d.tag)) return d;
+    return {
+      rack: true, tag: d.tag, elem: d,
+      chains: kids(find(d, "Branches")).map((b) => ({
+        color: +val(b, "Color", 0) || 0, devices: devicesInChain(b),
+        mixer: find(b, "MixerDevice"), zone: find(b, "BranchInfo") })),
+      returns: kids(find(d, "ReturnBranches")).map((b) => ({
+        color: +val(b, "Color", 0) || 0, devices: devicesInChain(b), mixer: find(b, "MixerDevice") })),
+    };
+  }
+  function wrapPreset(p) {
+    const devWrap = find(p, "Device");
+    const dev = devWrap && devWrap.c[0];
+    if (p.tag !== "GroupDevicePreset") return dev || null;
+    const chainsOf = (tag) => kids(find(p, tag)).map((b) => {
+      const mw = find(b, "MixerPreset/AbletonDevicePreset/Device");
+      return { color: +val(b, "Color", 0) || 0,
+        devices: kids(find(b, "DevicePresets")).map(wrapPreset).filter(Boolean),
+        mixer: mw && mw.c[0], zone: find(b, "ZoneSettings") };
+    });
+    return { rack: true, tag: dev.tag, elem: dev, chains: chainsOf("BranchPresets"),
+      returns: chainsOf("ReturnBranchPresets") };
+  }
+  function racksIn(xmlText, stem, fileReport) {
+    const r = parseXML(xmlText);
+    const gp = find(r, "GroupDevicePreset");
+    if (gp) return [[stem, wrapPreset(gp)]];
+    const ap = find(r, "AbletonDevicePreset");
+    if (ap) return [[stem, wrapPreset(ap)]];
+    const out = [];
+    for (const t of kids(find(r, "LiveSet/Tracks"))) {
+      if (t.tag !== "MidiTrack") continue;
+      const tname = val(t, "Name/EffectiveName", "") || val(t, "Name/UserName", "") || "Track";
+      const devs = kids(find(t, "DeviceChain/DeviceChain/Devices"));
+      if (!devs.length) continue;
+      const objs = devs.map(wrapLive);
+      const first = objs[0];
+      if (first.rack) {
+        out.push([val(first.elem, "UserName", "") || `${stem} - ${tname}`, first]);
+        if (objs.length > 1) fileReport.warn(`${tname}: devices after the rack on the track are left out (put them inside the rack)`);
+      } else out.push([`${stem} - ${tname}`, objs]);
+    }
+    return out;
+  }
+
+  // ------------------------------------------------------------ conversion
+  const plain = (v) => (v instanceof F ? v.v : v && typeof v === "object" ? v.value : v);
+
+  class Converter {
+    constructor(report, resolveSample) {
+      this.r = report; this.resolve = resolveSample;
+      this.samples = new Map(); this.originalUris = {};
+    }
+    params(elem, kind) {
+      const schema = T.schema[kind], enums = T.enums[kind] || {};
+      const out = {};
+      if (!schema) {
+        this.r.error(`${kind}: Note supports it, but this tool hasn't learnt its settings yet`);
+        return out;
+      }
+      for (const [key, typ] of Object.entries(schema)) {
+        if (key === "Enabled") { out[key] = val(elem, "On", "true") === "true"; continue; }
+        const mm = /^Macro(\d)$/.exec(key);
+        if (mm) { out[key] = f(val(elem, `MacroControls.${mm[1]}`, 0)); continue; }
+        const raw = val(elem, key);
+        if (raw === undefined) { this.r.warn(`${kind}.${key} missing in this Live version's file; Note's default used`); continue; }
+        let v;
+        if (typ === "bool") v = raw === "true";
+        else if (typ === "int") v = Math.trunc(+raw);
+        else if (typ === "float") v = f(raw);
+        else {
+          const table = enums[key], i = Math.trunc(+raw);
+          if (!table || i >= table.length) { this.r.error(`${kind}.${key}: Live value ${i} has no known Note label`); continue; }
+          v = table[i];
+          const ver = T.verified[`${kind}.${key}`] || [];
+          if (!ver.includes(i)) this.r.note(`${kind}.${key} = '${v}' (label from Live's menu order; not yet confirmed by an export)`);
+        }
+        out[key] = this.macro(find(elem, key), v);
+      }
+      return out;
+    }
+    macro(pe, v) {
+      const km = pe && find(pe, "KeyMidi");
+      if (!km || val(km, "Channel") !== "16" || val(km, "IsNote") === "true") return v;
+      const idx = +val(km, "NoteOrController");
+      if (idx > 7) { this.r.warn(`macro ${idx + 1} drives ${pe.tag}, but Note only has macros 1-8; dropped`); return v; }
+      const rng = find(pe, "MidiControllerRange");
+      const lo = rng ? +val(rng, "Min") : 0, hi = rng ? +val(rng, "Max") : 1;
+      this.r.note(`macro ${idx + 1} -> ${pe.tag} (${lo}..${hi})`);
+      return { value: v, macroMapping: { macroIndex: idx, rangeMin: f(lo), rangeMax: f(hi) } };
+    }
+    mixer(m, nReturns = 0, isReturn = false) {
+      if (!m) return { pan: f(0), "solo-cue": false, speakerOn: true, volume: f(0),
+        sends: Array.from({ length: nReturns }, () => ({ isEnabled: !isReturn, amount: f(-70) })) };
+      const sends = kids(find(m, "Sends")).slice(0, nReturns).map((s) => {
+        const lin = find(s, "Send/Manual");
+        const amt = lin ? toDb(lin.a.Value) : -70;
+        return { isEnabled: !isReturn, amount: f(Math.max(amt, -70)) };
+      });
+      return { pan: f(val(m, "Panorama", 0)), "solo-cue": false, speakerOn: val(m, "Speaker", "true") === "true",
+        volume: f(Math.max(toDb(val(m, "Volume", 1)), -70)), sends };
+    }
+    device(obj) {
+      if (obj.rack) return this.rack(obj);
+      const kind = T.kinds[obj.tag];
+      if (!kind) { this.r.error(`${obj.tag}: ${T.hints[obj.tag] || "not available in Note"}`); return null; }
+      const d = { presetUri: null, kind, name: val(obj, "UserName", "") || "", parameters: this.params(obj, kind), deviceData: {} };
+      applyExportRules(kind, d.parameters);
+      if (kind === "drift") {
+        const vc = T.enums.drift.Global_VoiceCount;
+        const cur = plain(d.parameters.Global_VoiceCount);
+        if (cur !== undefined && vc.indexOf(cur) > 1) {
+          this.r.warn(`Drift voices ${cur} -> 8 (Note's maximum)`);
+          d.parameters.Global_VoiceCount = "8";
+        }
+      }
+      if (kind === "drumCell") d.deviceData.sampleUri = this.sample(obj);
+      return d;
+    }
+    rack(rk) {
+      const kind = T.kinds[rk.tag];
+      if (kind !== "instrumentRack" && kind !== "drumRack") { this.r.error(`${rk.tag}: only Instrument Racks and Drum Racks go to Note`); return null; }
+      const d = { presetUri: null, kind, name: "", parameters: this.params(rk.elem, kind), chains: [] };
+      if (kind === "drumRack") {
+        d.returnChains = [];
+        if (rk.chains.length > 16) this.r.error(`Drum Rack has ${rk.chains.length} pads; Note plays 16`);
+        if (rk.returns.length > 1) this.r.error(`Drum Rack has ${rk.returns.length} return chains; Note allows one`);
+      }
+      for (const ch of rk.chains) {
+        const c = { name: "", color: chainColor(ch.color), devices: ch.devices.map((x) => this.device(x)).filter(Boolean),
+          mixer: this.mixer(ch.mixer, rk.returns.length) };
+        if (kind === "drumRack") c.drumZoneSettings = zone(ch.zone);
+        d.chains.push(c);
+      }
+      for (const ch of rk.returns)
+        d.returnChains.push({ name: "", color: chainColor(ch.color), devices: ch.devices.map((x) => this.device(x)).filter(Boolean),
+          mixer: this.mixer(ch.mixer, rk.returns.length, true) });
+      return d;
+    }
+    sample(cell) {
+      const fr = find(cell, "UserSample/Value/SampleRef/FileRef");
+      if (!fr) { this.r.warn("a Drum Sampler pad has no sample; Note will leave it empty"); return null; }
+      const path = val(fr, "Path", ""), rel = val(fr, "RelativePath", "");
+      const name = (path || rel).split("/").pop();
+      const hit = this.resolve({ path, rel, name });
+      if (!hit) { this.r.error(`sample not found: ${name}`); return null; }
+      let key = `Samples/${hit.name}`, n = 2;
+      while (this.samples.has(key) && this.samples.get(key).id !== hit.id) {
+        const dot = hit.name.lastIndexOf(".");
+        key = `Samples/${hit.name.slice(0, dot)}-${n++}${hit.name.slice(dot)}`;
+      }
+      this.samples.set(key, hit);
+      this.originalUris[key] = hit.uri || "file://" + encodeURI(path || rel);
+      return key;
+    }
+    preset(name, obj) {
+      const wrap = (devs, why) => {
+        this.r.note(why);
+        return { kind: "instrumentRack", name,
+          parameters: Object.assign({ Enabled: true }, ...[0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({ [`Macro${i}`]: f(0) }))),
+          chains: [{ name: "", color: 0, devices: devs.filter(Boolean), mixer: this.mixer(null) }] };
+      };
+      let top;
+      if (Array.isArray(obj)) top = wrap(obj.map((x) => this.device(x)), "devices were not in a rack: wrapped in an Instrument Rack automatically");
+      else if (obj.rack && obj.tag === "DrumGroupDevice") top = wrap([this.rack(obj)], "bare Drum Rack: wrapped in an Instrument Rack automatically");
+      else if (obj.rack) { top = this.rack(obj); if (!top) return null; delete top.presetUri; top.name = name; }
+      else return this.preset(name, [obj]);
+      if (top.chains.length !== 1)
+        this.r.error(`the outer rack has ${top.chains.length} chains; Note wants exactly one (make separate presets)`);
+      if (!sounds(top)) this.r.error("nothing in it makes sound in Note (needs a Drift, or a Drum Rack with Drum Sampler pads)");
+      for (const ch of top.chains) {
+        const fx = ch.devices.filter((d) => T.effects.includes(d.kind));
+        if (fx.length > 2) this.r.warn(`${fx.length} effects after the instrument; Note shows two FX slots`);
+      }
+      return Object.assign({ $schema: "http://tech.ableton.com/schema/song/1.7.0/devicePreset.json" }, top);
+    }
+  }
+  function sounds(d) {
+    if (d.kind === "drift" || (d.kind === "drumCell" && d.deviceData.sampleUri)) return true;
+    return (d.chains || []).some((c) => c.devices.some(sounds));
+  }
+  function zone(z) {
+    if (!z) return { receivingNote: 36, sendingNote: 60, chokeGroup: null };
+    const choke = +val(z, "ChokeGroup", 0) || 0;
+    return { receivingNote: 128 - +val(z, "ReceivingNote", 92), sendingNote: +val(z, "SendingNote", 60), chokeGroup: choke || null };
+  }
+  function chainColor(c) { const x = c * 2; return x < 70 ? x : c; }
+  function applyExportRules(kind, p) {
+    const set = (k, v) => { if (k in p) p[k] = p[k] && typeof p[k] === "object" && !(p[k] instanceof F) ? { ...p[k], value: v } : v; };
+    if (kind === "drift") set("Global_HiQuality", false);
+    else if (kind === "reverb") {
+      set("RoomType", "SuperEco");
+      if (plain(p.ShelfLowOn) === false) { set("ShelfLowOn", true); set("ShelfLoGain", f(1)); }
+      if (plain(p.ShelfHighOn) === false) { set("ShelfHighOn", true); set("ShelfHiGain", f(1)); }
+    } else if (kind === "delay") { set("DelayLine_Link", true); set("EcoProcessing", true); }
+  }
+
+  // Python's json.dumps writes 1.0 for floats; JS writes 1. Both are the same JSON number.
+  function convert(xmlText, stem, resolveSample) {
+    const fileReport = new Report(stem);
+    let items;
+    try { items = racksIn(xmlText, stem, fileReport); }
+    catch (e) { fileReport.error(`can't read: ${e.message}`); return [{ report: fileReport }]; }
+    if (!items.length) { fileReport.error("nothing to convert (no MIDI track with an instrument)"); return [{ report: fileReport }]; }
+    return items.map(([name, obj]) => {
+      const r = new Report(name);
+      r.warnings.push(...fileReport.warnings);
+      const c = new Converter(r, resolveSample);
+      const preset = c.preset(name, obj);
+      return { report: r, preset, samples: c.samples, bundleInfo: { originalSampleUris: c.originalUris } };
+    });
+  }
+
+  // ------------------------------------------------------------ zip (stored, no compression)
+  const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  function crc32(b) { let c = 0xffffffff; for (let i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+  function zip(files) { // files: [[name, Uint8Array]]
+    const enc = new TextEncoder(), parts = [], central = [];
+    let off = 0;
+    for (const [name, data] of files) {
+      const nb = enc.encode(name), crc = crc32(data);
+      const h = new DataView(new ArrayBuffer(30));
+      h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true);
+      h.setUint16(8, 0, true); h.setUint16(10, 0, true); h.setUint16(12, 0x21, true);
+      h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true);
+      h.setUint16(26, nb.length, true); h.setUint16(28, 0, true);
+      parts.push(new Uint8Array(h.buffer), nb, data);
+      const cd = new DataView(new ArrayBuffer(46));
+      cd.setUint32(0, 0x02014b50, true); cd.setUint16(4, 20, true); cd.setUint16(6, 20, true); cd.setUint16(8, 0x0800, true);
+      cd.setUint16(10, 0, true); cd.setUint16(12, 0, true); cd.setUint16(14, 0x21, true);
+      cd.setUint32(16, crc, true); cd.setUint32(20, data.length, true); cd.setUint32(24, data.length, true);
+      cd.setUint16(28, nb.length, true); cd.setUint32(42, off, true);
+      central.push(new Uint8Array(cd.buffer), nb);
+      off += 30 + nb.length + data.length;
+    }
+    const cdSize = central.reduce((s, x) => s + x.length, 0);
+    const e = new DataView(new ArrayBuffer(22));
+    e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+    e.setUint32(12, cdSize, true); e.setUint32(16, off, true);
+    return new Blob([...parts, ...central, new Uint8Array(e.buffer)], { type: "application/zip" });
+  }
+  function jsonText(x, ind = "") {
+    const pad = ind + "  ";
+    if (x instanceof F) {
+      const v = Number.isFinite(x.v) ? x.v : -70;
+      return Number.isInteger(v) ? v.toFixed(1) : String(v);
+    }
+    if (x === null || typeof x !== "object") return JSON.stringify(x === -Infinity ? -70 : x);
+    if (Array.isArray(x)) return x.length ? "[\n" + x.map((v) => pad + jsonText(v, pad)).join(",\n") + "\n" + ind + "]" : "[]";
+    const ks = Object.keys(x).filter((k) => x[k] !== undefined);
+    return ks.length ? "{\n" + ks.map((k) => pad + JSON.stringify(k) + ": " + jsonText(x[k], pad)).join(",\n") + "\n" + ind + "}" : "{}";
+  }
+  function bundle(result, sampleBytes) { // sampleBytes: Map key -> Uint8Array
+    const enc = new TextEncoder();
+    const files = [["Preset.ablpreset", enc.encode(jsonText(result.preset))],
+      ["BundleInfo.json", enc.encode(jsonText(result.bundleInfo))]];
+    for (const [k, b] of sampleBytes) files.push([k, b]);
+    return zip(files);
+  }
+
+  root.Live2Note = { setTables: (t) => (T = t), convert, bundle, jsonText, parseXML, crc32 };
+})(typeof window !== "undefined" ? window : globalThis);
+
+Live2Note.setTables(Live2NoteTables);</script>
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const pads = $("pads");
+  for (let i = 0; i < 16; i++) pads.appendChild(document.createElement("i"));
+  const padEls = [...pads.children];
+  function flash(n) { // light pads as presets come out, like hitting them
+    padEls.forEach((p, i) => p.classList.toggle("lit", i < n));
+  }
+
+  let results = []; // {report, preset, samples, bundleInfo, files: Map}
+  let pool = [];    // everything dropped so far: a set first, its samples second, both work
+
+  // ------------------------------------------------- reading what was dropped
+  async function entryFiles(entry, prefix = "") {
+    if (entry.isFile) return new Promise((res) => entry.file((f) => res([{ file: f, path: prefix + f.name }]), () => res([])));
+    if (!entry.isDirectory) return [];
+    const reader = entry.createReader(), all = [];
+    for (;;) {
+      const batch = await new Promise((res) => reader.readEntries(res, () => res([])));
+      if (!batch.length) break;
+      all.push(...batch);
+    }
+    const out = [];
+    for (const e of all) out.push(...(await entryFiles(e, prefix + entry.name + "/")));
+    return out;
+  }
+  async function gunzipText(file) {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    if (buf[0] !== 0x1f || buf[1] !== 0x8b) return new TextDecoder().decode(buf);
+    const ds = new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"));
+    return await new Response(ds).text();
+  }
+
+  async function handle(added) {
+    const seen = new Set(pool.map((x) => x.path + ":" + x.file.size));
+    for (const x of added) if (!seen.has(x.path + ":" + x.file.size)) pool.push(x);
+    const list = pool;
+    const isLive = (p) => /\.(adg|adv|als)$/i.test(p) && !/\/Backup\//.test("/" + p) && !p.split("/").pop().startsWith(".");
+    const sets = list.filter((x) => isLive(x.path));
+    const audio = list.filter((x) => /\.(wav|aiff?|flac|mp3|ogg)$/i.test(x.path));
+    if (!sets.length) { showMessage(audio.length ? `${audio.length} audio files added. Now drop the rack or Live Set they belong to.` : "No .adg, .adv or .als file in what you dropped."); return; }
+    const byName = new Map();
+    for (const a of audio) { const n = a.path.split("/").pop(); if (!byName.has(n)) byName.set(n, []); byName.get(n).push(a); }
+    const resolve = ({ rel, name }) => {
+      const cands = byName.get(name) || [];
+      if (!cands.length) return null;
+      const hit = (rel && cands.find((c) => c.path.endsWith(rel))) || cands[0];
+      return { id: hit.path, name, file: hit.file };
+    };
+    results = [];
+    for (const s of sets) {
+      let xml;
+      try { xml = await gunzipText(s.file); } catch (e) { results.push({ report: { name: s.path, errors: ["can't read this file: " + e.message], warnings: [], notes: [] } }); continue; }
+      const stem = s.path.split("/").pop().replace(/\.(adg|adv|als)$/i, "");
+      results.push(...Live2Note.convert(xml, stem, resolve));
+    }
+    $("resultsTitle").textContent = "Your presets";
+    render(false);
+  }
+
+  // ------------------------------------------------- results
+  function bytesOf(r) {
+    let n = 0; if (r.samples) for (const [, h] of r.samples) n += h.file ? h.file.size : 0; return n;
+  }
+  function fmtSize(n) { return n < 1024 ? n + " B" : n < 1 << 20 ? (n / 1024).toFixed(0) + " KB" : (n / 1048576).toFixed(1) + " MB"; }
+  function summary(p) {
+    if (!p) return "";
+    const kinds = [];
+    const walk = (d) => { if (d.kind !== "instrumentRack" && d.kind !== "drumCell") kinds.push(d.kind); (d.chains || []).forEach((c) => c.devices.forEach(walk)); };
+    walk(p);
+    const names = { drift: "Drift", drumRack: "Drum Rack", reverb: "Reverb", delay: "Delay", saturator: "Saturator",
+      chorus: "Chorus-Ensemble", phaser: "Phaser-Flanger", redux2: "Redux", channelEq: "Channel EQ" };
+    let pads = 0; const cnt = (d) => { if (d.kind === "drumRack") pads += d.chains.length; (d.chains || []).forEach((c) => c.devices.forEach(cnt)); }; cnt(p);
+    return kinds.map((k) => names[k] || k).join(" → ") + (pads ? ` · ${pads} pads` : "");
+  }
+  function li(cls, text) { const e = document.createElement("li"); e.className = cls; e.textContent = text; return e; }
+
+  function render(isExample) {
+    const list = $("list"); list.textContent = "";
+    let ready = 0;
+    results.forEach((r, i) => {
+      const ok = r.preset && !r.report.errors.length;
+      ready += ok;
+      const row = document.createElement("div"); row.className = "row";
+      const chip = document.createElement("span"); chip.className = "chip " + (ok ? "ok" : "bad"); chip.textContent = ok ? "Ready" : "Needs a fix";
+      const mid = document.createElement("div"); mid.style.minWidth = "0";
+      const nm = document.createElement("div"); nm.className = "name"; nm.textContent = r.report.name;
+      const meta = document.createElement("div"); meta.className = "meta";
+      meta.textContent = [summary(r.preset), ok && r.samples && r.samples.size ? fmtSize(bytesOf(r)) + " of samples" : ""].filter(Boolean).join(" · ");
+      mid.append(nm, meta);
+      const act = document.createElement("div"); act.className = "act";
+      if (ok) {
+        const b = document.createElement("button"); b.type = "button"; b.textContent = isExample ? "Example" : "Download";
+        b.disabled = isExample; b.onclick = () => save(r); act.append(b);
+      }
+      row.append(chip, mid, act);
+      const ul = document.createElement("ul");
+      const missing = r.report.errors.filter((m) => m.startsWith("sample not found: ")).map((m) => m.slice(18));
+      r.report.errors.filter((m) => !m.startsWith("sample not found: ") && !(missing.length && m.startsWith("nothing in it makes sound")))
+        .forEach((m) => ul.append(li("e", m)));
+      if (missing.length) {
+        ul.append(li("e", `${missing.length} sample${missing.length > 1 ? "s" : ""} not found. The page can only read files you give it: drop the project's Samples folder here (or the whole project folder) and this kit will update.`));
+        ul.append(li("n", "Missing: " + missing.slice(0, 4).join(", ") + (missing.length > 4 ? ` and ${missing.length - 4} more` : "")));
+      }
+      r.report.warnings.forEach((m) => ul.append(li("w", m)));
+      const macros = r.report.notes.filter((m) => m.startsWith("macro"));
+      const other = r.report.notes.filter((m) => !m.startsWith("macro") && !m.startsWith("->") && !m.includes("not yet confirmed"));
+      const unconf = r.report.notes.filter((m) => m.includes("not yet confirmed"));
+      other.forEach((m) => ul.append(li("n", m)));
+      if (macros.length) ul.append(li("n", `${macros.length} macro mapping${macros.length > 1 ? "s" : ""} kept: ` + macros.map((m) => m.replace(/^macro (\d+) -> (\S+).*/, "$1 → $2")).join(", ")));
+      if (unconf.length) {
+        const d = document.createElement("details"); const s = document.createElement("summary");
+        s.textContent = `${unconf.length} setting label${unconf.length > 1 ? "s" : ""} taken from Live's menu order`;
+        const inner = document.createElement("ul"); unconf.forEach((m) => inner.append(li("n", m.replace(/ \(label.*$/, ""))));
+        d.append(s, inner); const holder = li("n", ""); holder.textContent = ""; holder.append(d); holder.classList.remove("n"); ul.append(holder);
+      }
+      if (ul.children.length) row.append(ul);
+      list.append(row);
+    });
+    $("count").textContent = isExample ? "" : `${ready} of ${results.length} ready`;
+    $("clearAll").hidden = isExample;
+    $("saveAll").disabled = isExample || ready < 1;
+    flash(Math.min(16, ready));
+  }
+
+  function fileName(r) { return (r.report.name.replace(/[\\/:*?"<>|]+/g, "-").trim() || "Preset") + ".ablpresetbundle"; }
+  async function blobFor(r) {
+    const bytes = new Map();
+    for (const [k, h] of r.samples) bytes.set(k, new Uint8Array(await h.file.arrayBuffer()));
+    return Live2Note.bundle(r, bytes);
+  }
+  async function save(r) {
+    const blob = await blobFor(r);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = fileName(r);
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  }
+  $("saveAll").onclick = async () => {
+    for (const r of results) if (r.preset && !r.report.errors.length) { await save(r); await new Promise((s) => setTimeout(s, 350)); }
+  };
+  $("clearAll").onclick = () => { pool = []; results = []; $("list").textContent = ""; $("count").textContent = ""; $("clearAll").hidden = true; $("saveAll").disabled = true; $("resultsTitle").textContent = "Your presets"; flash(0); };
+  function showMessage(m) {
+    results = [{ report: { name: m, errors: [], warnings: [], notes: [] } }];
+    $("list").innerHTML = ""; const p = document.createElement("p"); p.className = "hint"; p.style.color = "var(--muted)"; p.textContent = m; $("list").append(p);
+  }
+
+  // ------------------------------------------------- input wiring
+  const drop = $("drop");
+  ["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((t) => drop.addEventListener(t, () => drop.classList.remove("over")));
+  drop.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    const items = [...(e.dataTransfer.items || [])].map((it) => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean);
+    let list = [];
+    if (items.length) for (const en of items) list.push(...(await entryFiles(en)));
+    else list = [...e.dataTransfer.files].map((f) => ({ file: f, path: f.name }));
+    handle(list);
+  });
+  drop.addEventListener("click", (e) => { if (e.target.tagName !== "BUTTON") $("files").click(); });
+  drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("files").click(); } });
+  $("pickFiles").onclick = () => $("files").click();
+  $("pickFolder").onclick = () => $("folder").click();
+  $("files").onchange = (e) => handle([...e.target.files].map((f) => ({ file: f, path: f.name })));
+  $("folder").onchange = (e) => handle([...e.target.files].map((f) => ({ file: f, path: f.webkitRelativePath || f.name })));
+
+  // ------------------------------------------------- the example shown before anything is dropped
+  results = [
+    { report: { name: "Glass Pluck", errors: [], warnings: ["Drift voices 16 -> 8 (Note's maximum)"],
+        notes: ["macro 1 -> Filter_Frequency (200..8000)", "macro 2 -> DecayTime (800..6000)"] },
+      preset: { kind: "instrumentRack", chains: [{ devices: [{ kind: "drift" }, { kind: "reverb" }] }] } },
+    { report: { name: "Room Kit", errors: [], warnings: [], notes: [] },
+      preset: { kind: "instrumentRack", chains: [{ devices: [{ kind: "drumRack", chains: Array(16).fill({ devices: [] }) }, { kind: "saturator" }] }] } },
+    { report: { name: "Big Pad", errors: ["InstrumentVector: Wavetable isn't in Live's export list yet: resample it, or rebuild it in Drift"], warnings: [], notes: [] } },
+  ];
+  render(true);
+})();
+</script>
+
+</body></html>
