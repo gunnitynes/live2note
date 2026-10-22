@@ -29,7 +29,8 @@ JSON names**. The differences are:
 
 ## Use
 
-Students: `web/index.html` (one self-contained file; open it in a browser or host it).
+Students: **https://gunnitynes.github.io/live2note/** (the same page as `docs/index.html`;
+nothing is uploaded, it all runs in the browser).
 Drop an `.adg`, or a Live project folder after **File → Collect All and Save**.
 
 Teacher / batch:
